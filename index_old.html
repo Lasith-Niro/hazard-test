@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FIOS Demo — Hazard vs. GP Access, South-East Dublin</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{
+    --ink:#1c2321; --paper:#f6f3ec; --line:#d8d2c4;
+    --hazard:#b3452c; --resource:#2f6b5e; --gap:#8a1f2b;
+    --good:#3b7a57; --mid:#c98a2c; --accent:#1c2321;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    background:var(--paper); color:var(--ink);
+  }
+  header{
+    padding:18px 22px 14px; border-bottom:1px solid var(--line);
+  }
+  header h1{margin:0 0 4px; font-size:19px; letter-spacing:0.2px;}
+  header p{margin:0; font-size:13px; color:#5a5a52; line-height:1.5; max-width:820px;}
+  .layout{display:flex; flex-wrap:wrap; gap:0;}
+  #map{height:560px; flex:1 1 620px; min-width:320px; border-right:1px solid var(--line);}
+  .panel{
+    width:300px; flex:0 0 300px; padding:16px 18px; font-size:13px;
+  }
+  .panel h2{font-size:13px; text-transform:uppercase; letter-spacing:0.6px; margin:0 0 8px; color:#5a5a52;}
+  .instructions{
+    background:#fff; border:1px solid var(--line); border-radius:6px; padding:10px 12px; margin-bottom:14px; line-height:1.5;
+  }
+  .quadrant{
+    display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:14px;
+  }
+  .q{
+    border-radius:6px; padding:8px; font-size:11.5px; line-height:1.35; border:1px solid var(--line);
+  }
+  .q.gap{background:#f6e2e0; border-color:#d9a9a3;}
+  .q.exposed{background:#fbeedd; border-color:#e5c193;}
+  .q.deficit{background:#eaf1e9; border-color:#b9d3bb;}
+  .q.low{background:#fff; }
+  .q b{display:block; margin-bottom:2px;}
+  #result{
+    background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px; min-height:118px;
+  }
+  #result .label{font-size:15px; font-weight:600; margin-bottom:6px;}
+  #result .metric{font-size:12.5px; color:#3a3a34; margin-bottom:2px;}
+  .legend-row{display:flex; align-items:center; gap:7px; margin:5px 0; font-size:12px;}
+  .dot{width:11px; height:11px; border-radius:50%; display:inline-block; flex:0 0 auto;}
+  .ring{width:11px; height:11px; border-radius:50%; display:inline-block; border:2px solid var(--hazard); background:transparent; flex:0 0 auto;}
+  footer{padding:10px 22px 16px; font-size:11.5px; color:#7a7a70; border-top:1px solid var(--line);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FIOS demo — hazard proximity vs. GP access, South-East Dublin</h1>
+  <p>Illustrates the core FIOS method from Section 5 of the proposal: for any point, compute straight-line distance to the nearest environmental hazard and the nearest health resource, then classify into the four-quadrant gap map from Section 3. Click anywhere on the map to test a location.</p>
+</header>
+
+<div class="layout">
+  <div id="map"></div>
+  <div class="panel">
+    <div class="instructions">Click any point on the map — coastline, a housing estate, an upland road — to see its hazard/access classification computed live.</div>
+
+    <h2>Click result</h2>
+    <div id="result">
+      <div class="label" style="color:#7a7a70;">No point selected yet</div>
+      <div class="metric">Click the map to classify a location.</div>
+    </div>
+
+    <h2 style="margin-top:16px;">The four quadrants</h2>
+    <div class="quadrant">
+      <div class="q gap"><b>FIOS gap zone</b>High hazard, poor access — highest policy priority</div>
+      <div class="q exposed"><b>Exposed but served</b>High hazard, good access</div>
+      <div class="q deficit"><b>Service-deficit</b>Low hazard, poor access</div>
+      <div class="q low"><b>Lowest concern</b>Low hazard, good access</div>
+    </div>
+
+    <h2>Map layers</h2>
+    <div class="legend-row"><span class="dot" style="background:#2f6b5e;"></span> GP practice (real listings)</div>
+    <div class="legend-row"><span class="dot" style="background:#b3452c;"></span> Hazard point (illustrative)</div>
+    <div class="legend-row"><span class="ring"></span> 1.5 km hazard influence radius</div>
+  </div>
+</div>
+
+<footer>
+  GP locations are real practice listings for the Ringsend–Sandymount–Dún Laoghaire–Dalkey–Blackrock corridor. Hazard points are real, named facilities/corridors used illustratively (not drawn from a live EPA/OPW feed) — swap in the licensed EPA Geoportal and OPW CFRAM layers for production use. Thresholds (1.5 km hazard / 2 km resource) are demo defaults, not the proposal's proposed methodology, which uses full distance distributions per Small Area.
+</footer>
+
+<script>
+// ---- Real GP practice locations (from search) ----
+const gps = [
+  ["Dun Laoghaire Surgery", 53.2893177, -6.1299432],
+  ["Sheehan Medical Practice", 53.2923032, -6.1353126],
+  ["Beechlawn Medical Centre", 53.2918594, -6.1516143],
+  ["Rahona Family Practice", 53.27599, -6.1579013],
+  ["Sandycove Surgery", 53.286320, -6.1194944],
+  ["Monkstown Surgery", 53.2854436, -6.1535023],
+  ["Hoban Health", 53.2906778, -6.1352144],
+  ["Harbour Health", 53.289288, -6.1299249],
+  ["Sandymount Medical", 53.3391991, -6.2363043],
+  ["Ringsend Medical Centre", 53.3412852, -6.226739],
+  ["Sandymount Green Medical", 53.3320348, -6.2143812],
+  ["Irishtown & Ringsend PCC", 53.3407274, -6.2254747],
+  ["Dalkey Medical Centre", 53.2778039, -6.1037913],
+  ["Rockcourt Medical Centre, Blackrock", 53.3011106, -6.1763058],
+  ["Blackrock Medical Practice", 53.2911784, -6.1713918]
+];
+
+// ---- Illustrative hazard points (real named locations, used as demo hazard proxies) ----
+const hazards = [
+  ["Ringsend Wastewater Treatment Plant (illustrative — EPA-licensed facility)", 53.3436, -6.2103],
+  ["Dublin Port industrial corridor (illustrative — noise/air)", 53.3462, -6.2050],
+  ["Sandymount / Merrion Strand coastal flood zone (illustrative — OPW CFRAM area)", 53.3345, -6.2200],
+  ["N11/R131 primary road corridor (illustrative — noise/air)", 53.2870, -6.1620]
+];
+
+const map = L.map('map').setView([53.310, -6.185], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
+}).addTo(map);
+
+const gpIcon = L.divIcon({className:'', html:'<div style="width:12px;height:12px;border-radius:50%;background:#2f6b5e;border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.4);"></div>', iconSize:[12,12]});
+const hazIcon = L.divIcon({className:'', html:'<div style="width:13px;height:13px;border-radius:50%;background:#b3452c;border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.4);"></div>', iconSize:[13,13]});
+
+gps.forEach(([name, lat, lng]) => {
+  L.marker([lat, lng], {icon: gpIcon}).addTo(map).bindPopup(`<b>${name}</b><br>GP practice`);
+});
+
+hazards.forEach(([name, lat, lng]) => {
+  L.marker([lat, lng], {icon: hazIcon}).addTo(map).bindPopup(`<b>${name}</b>`);
+  L.circle([lat, lng], {radius: 1500, color:'#b3452c', weight:1, fillColor:'#b3452c', fillOpacity:0.06}).addTo(map);
+});
+
+function haversine(lat1, lon1, lat2, lon2){
+  const R = 6371;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+let clickMarker = null;
+
+map.on('click', (e) => {
+  const {lat, lng} = e.latlng;
+
+  let nearestHazard = null, hazardDist = Infinity;
+  hazards.forEach(([name, hlat, hlng]) => {
+    const d = haversine(lat, lng, hlat, hlng);
+    if (d < hazardDist) { hazardDist = d; nearestHazard = name; }
+  });
+
+  let nearestGP = null, gpDist = Infinity;
+  gps.forEach(([name, glat, glng]) => {
+    const d = haversine(lat, lng, glat, glng);
+    if (d < gpDist) { gpDist = d; nearestGP = name; }
+  });
+
+  const highHazard = hazardDist <= 1.5;
+  const poorAccess = gpDist > 2.0;
+
+  let label, color, cls;
+  if (highHazard && poorAccess) { label = "FIOS gap zone"; color = "#8a1f2b"; }
+  else if (highHazard && !poorAccess) { label = "Exposed but served"; color = "#c98a2c"; }
+  else if (!highHazard && poorAccess) { label = "Service-deficit area"; color = "#3b6ea5"; }
+  else { label = "Lowest concern"; color = "#3b7a57"; }
+
+  if (clickMarker) map.removeLayer(clickMarker);
+  clickMarker = L.circleMarker([lat, lng], {radius:8, color:'#1c2321', weight:2, fillColor: color, fillOpacity:0.9}).addTo(map);
+
+  document.getElementById('result').innerHTML = `
+    <div class="label" style="color:${color};">${label}</div>
+    <div class="metric"><b>Nearest hazard:</b> ${nearestHazard}</div>
+    <div class="metric">${hazardDist.toFixed(2)} km away</div>
+    <div class="metric" style="margin-top:6px;"><b>Nearest GP:</b> ${nearestGP}</div>
+    <div class="metric">${gpDist.toFixed(2)} km away</div>
+  `;
+});
+</script>
+</body>
+</html>
